@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Save Image as Any Type — Settings</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 24px;
+      color: #202124;
+      background: #fff;
+    }
+    h1 { font-size: 22px; margin-bottom: 24px; }
+    h2 {
+      font-size: 15px;
+      font-weight: 600;
+      color: #5f6368;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin: 32px 0 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #e0e0e0;
+    }
+
+    /* Format list */
+    .format-list { list-style: none; }
+    .format-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 8px;
+      border-bottom: 1px solid #f0f0f0;
+      cursor: grab;
+    }
+    .format-item:active { cursor: grabbing; }
+    .format-item.dragging { opacity: 0.4; }
+    .format-item.drag-over { border-top: 2px solid #1a73e8; }
+    .drag-handle {
+      color: #bbb;
+      cursor: grab;
+      font-size: 16px;
+      user-select: none;
+    }
+    .format-label { font-weight: 500; min-width: 50px; }
+    .format-controls { display: flex; align-items: center; gap: 12px; flex: 1; }
+    .format-settings {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: #5f6368;
+    }
+    .format-settings input[type="range"] { width: 100px; }
+    .format-settings select { padding: 2px 4px; }
+
+    /* Placement toggle */
+    .placement-toggle {
+      font-size: 12px;
+      padding: 3px 8px;
+      border: 1px solid #dadce0;
+      border-radius: 12px;
+      background: #f8f9fa;
+      cursor: pointer;
+      user-select: none;
+    }
+    .placement-toggle.top-level {
+      background: #e8f0fe;
+      border-color: #1a73e8;
+      color: #1a73e8;
+    }
+
+    /* Toggle switch */
+    .toggle { position: relative; display: inline-block; width: 36px; height: 20px; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle .slider {
+      position: absolute; inset: 0;
+      background: #dadce0; border-radius: 10px;
+      cursor: pointer; transition: background 0.2s;
+    }
+    .toggle .slider::before {
+      content: "";
+      position: absolute; left: 2px; top: 2px;
+      width: 16px; height: 16px;
+      background: #fff; border-radius: 50%;
+      transition: transform 0.2s;
+    }
+    .toggle input:checked + .slider { background: #1a73e8; }
+    .toggle input:checked + .slider::before { transform: translateX(16px); }
+
+    /* Transparency section */
+    .color-presets { display: flex; gap: 8px; margin-top: 8px; }
+    .color-preset {
+      width: 32px; height: 32px;
+      border: 2px solid #dadce0; border-radius: 4px;
+      cursor: pointer;
+    }
+    .color-preset.active { border-color: #1a73e8; }
+    .color-preset.white { background: #fff; }
+    .color-preset.black { background: #000; }
+    .color-custom { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+    input[type="color"] { width: 32px; height: 32px; border: none; padding: 0; cursor: pointer; }
+
+    /* Notifications section */
+    .setting-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .setting-row label { font-size: 14px; }
+    select.action-select { padding: 4px 8px; border: 1px solid #dadce0; border-radius: 4px; }
+
+    /* Tip box */
+    .tip {
+      margin-top: 16px;
+      padding: 12px;
+      background: #fef7e0;
+      border-radius: 8px;
+      font-size: 13px;
+      color: #5f6368;
+    }
+    .tip strong { color: #202124; }
+
+    /* Save status */
+    .save-status {
+      position: fixed; bottom: 24px; right: 24px;
+      padding: 8px 16px;
+      background: #1a73e8; color: #fff;
+      border-radius: 8px;
+      font-size: 13px;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .save-status.visible { opacity: 1; }
+  </style>
+</head>
+<body>
+  <h1>Save Image as Any Type</h1>
+
+  <h2>Formats</h2>
+  <ul class="format-list" id="formatList"></ul>
+
+  <h2>Transparency Background</h2>
+  <p style="font-size: 13px; color: #5f6368; margin-bottom: 8px;">
+    Used when saving as JPG or BMP (formats without transparency).
+  </p>
+  <div class="color-presets" id="colorPresets">
+    <div class="color-preset white" data-color="#ffffff" title="White"></div>
+    <div class="color-preset black" data-color="#000000" title="Black"></div>
+  </div>
+  <div class="color-custom">
+    <input type="color" id="customColor" value="#ffffff">
+    <span id="colorHex" style="font-size: 13px; color: #5f6368;">#ffffff</span>
+  </div>
+
+  <h2>Notifications</h2>
+  <div class="setting-row">
+    <label>Show success badge</label>
+    <label class="toggle">
+      <input type="checkbox" id="showSuccessBadge">
+      <span class="slider"></span>
+    </label>
+  </div>
+  <div class="setting-row">
+    <label>Show error notifications</label>
+    <label class="toggle">
+      <input type="checkbox" id="showErrorNotifications">
+      <span class="slider"></span>
+    </label>
+  </div>
+  <div class="setting-row">
+    <label>Default action</label>
+    <select class="action-select" id="defaultAction">
+      <option value="save">Save to disk</option>
+      <option value="clipboard">Copy to clipboard</option>
+    </select>
+  </div>
+
+  <div class="tip">
+    <strong>Tip:</strong> Hold <strong>Shift</strong> while clicking any format to quickly switch
+    between save and copy.
+  </div>
+
+  <div class="save-status" id="saveStatus">Settings saved</div>
+
+  <script src="lib/defaults.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>
