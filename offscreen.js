@@ -60,17 +60,17 @@ async function convertImage(imageUrl, format, settings) {
       return canvas.toDataURL("image/png");
 
     case "jpg": {
-      const q = (settings.quality || 92) / 100;
+      const q = (settings.quality ?? 92) / 100;
       return canvas.toDataURL("image/jpeg", q);
     }
 
     case "webp": {
-      const q = (settings.quality || 90) / 100;
+      const q = (settings.quality ?? 90) / 100;
       return canvas.toDataURL("image/webp", q);
     }
 
     case "avif": {
-      const q = (settings.quality || 80) / 100;
+      const q = (settings.quality ?? 80) / 100;
       const dataUrl = canvas.toDataURL("image/avif", q);
       // Chrome returns PNG if AVIF not supported — detect and error
       if (dataUrl.startsWith("data:image/png")) {

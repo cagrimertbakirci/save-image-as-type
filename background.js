@@ -11,6 +11,11 @@ chrome.runtime.onInstalled.addListener(async () => {
   await buildContextMenus(settings);
 });
 
+chrome.runtime.onStartup.addListener(async () => {
+  const settings = await loadSettings();
+  await buildContextMenus(settings);
+});
+
 // Rebuild menus when settings change
 chrome.storage.onChanged.addListener(async (changes) => {
   if (changes.settings) {
@@ -119,18 +124,15 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   const settings = await loadSettings();
   let { action, format } = parsed;
 
-  // Shift+click overrides: save ↔ clipboard
+  // Apply default action override first (swap save↔copy based on user preference)
+  if (action === "save" && settings.notifications.defaultAction === "clipboard") {
+    action = "copy";
+  }
+
+  // Shift+click inverts the effective action (overrides both menu choice and default)
   if (lastModifierState.shiftKey) {
     if (action === "save") action = "copy";
     else if (action === "copy") action = "save";
-  }
-
-  // Check default action override (only for "save" action when defaultAction is clipboard)
-  if (action === "save" && settings.notifications.defaultAction === "clipboard" && !lastModifierState.shiftKey) {
-    action = "copy";
-  }
-  if (action === "copy" && settings.notifications.defaultAction === "save" && !lastModifierState.shiftKey) {
-    // Already correct
   }
 
   const formatSettings = getFormatSettings(settings, format);
@@ -269,17 +271,33 @@ async function handleBatchSave(tab, format, formatSettings, settings) {
       });
 
       const confirmed = await new Promise((resolve) => {
-        const handler = (notifId, btnIdx) => {
+        const btnHandler = (notifId, btnIdx) => {
           if (notifId === "batch-confirm") {
-            chrome.notifications.onButtonClicked.removeListener(handler);
+            chrome.notifications.onButtonClicked.removeListener(btnHandler);
+            chrome.notifications.onClosed.removeListener(closeHandler);
             resolve(btnIdx === 0);
           }
         };
-        chrome.notifications.onButtonClicked.addListener(handler);
+        const closeHandler = (notifId) => {
+          if (notifId === "batch-confirm") {
+            chrome.notifications.onButtonClicked.removeListener(btnHandler);
+            chrome.notifications.onClosed.removeListener(closeHandler);
+            resolve(false);
+          }
+        };
+        chrome.notifications.onButtonClicked.addListener(btnHandler);
+        chrome.notifications.onClosed.addListener(closeHandler);
       });
 
       if (!confirmed) return;
     }
+
+    // Cancel batch when progress notification is closed
+    chrome.notifications.onClosed.addListener((notifId) => {
+      if (notifId === "batch-progress") {
+        batchCancelFlag = true;
+      }
+    });
 
     chrome.notifications.create("batch-progress", {
       type: "basic",
@@ -394,8 +412,7 @@ function deriveFilename(url, format) {
 
     name = name.replace(/[^a-zA-Z0-9_\-\.]/g, "_") || "image";
 
-    const ext = format === "ico" ? "ico" : format;
-    return `${name}.${ext}`;
+    return `${name}.${format}`;
   } catch {
     return `image.${format}`;
   }

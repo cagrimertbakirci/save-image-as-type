@@ -62,14 +62,6 @@ function renderFormats() {
       });
     }
 
-    const compressionSelect = li.querySelector("[data-field='compression']");
-    if (compressionSelect) {
-      compressionSelect.addEventListener("change", (e) => {
-        currentSettings.formats[index].compression = e.target.value;
-        save();
-      });
-    }
-
     const sizeSelect = li.querySelector("[data-field='size']");
     if (sizeSelect) {
       sizeSelect.addEventListener("change", (e) => {
@@ -93,13 +85,6 @@ function renderFormatSettings(fmt) {
   if ("quality" in fmt) {
     return `<span class="quality-value">${fmt.quality}%</span>
             <input type="range" min="1" max="100" value="${fmt.quality}" data-field="quality">`;
-  }
-  if ("compression" in fmt) {
-    return `<select data-field="compression">
-              <option value="none" ${fmt.compression === "none" ? "selected" : ""}>None</option>
-              <option value="lzw" ${fmt.compression === "lzw" ? "selected" : ""}>LZW</option>
-              <option value="deflate" ${fmt.compression === "deflate" ? "selected" : ""}>Deflate</option>
-            </select>`;
   }
   if ("size" in fmt) {
     return `<select data-field="size">
