@@ -56,36 +56,94 @@ async function buildContextMenus(settings) {
   const topLevel = visible.filter((f) => f.topLevel);
   const others = visible.filter((f) => !f.topLevel);
 
-  // Save Image As...
+  // Single top-level entry
+  const root = "save-image-as";
   chrome.contextMenus.create({
-    id: "save-image-as",
-    title: "Save Image As...",
+    id: root,
+    title: "Save Image as Any Type",
+    contexts: ["image", "page"],
+  });
+
+  // Save formats — directly in root menu (2 clicks to reach)
+  for (const fmt of topLevel) {
+    chrome.contextMenus.create({
+      id: `save-${fmt.id}`,
+      parentId: root,
+      title: `Save as ${fmt.label}`,
+      contexts: ["image"],
+    });
+  }
+
+  // Save Others submenu
+  if (others.length > 0) {
+    chrome.contextMenus.create({
+      id: "save-others",
+      parentId: root,
+      title: "Save as Others",
+      contexts: ["image"],
+    });
+    for (const fmt of others) {
+      chrome.contextMenus.create({
+        id: `save-${fmt.id}`,
+        parentId: "save-others",
+        title: fmt.label,
+        contexts: ["image"],
+      });
+    }
+  }
+
+  // Separator before copy/batch
+  chrome.contextMenus.create({
+    id: "sep-1",
+    parentId: root,
+    type: "separator",
     contexts: ["image"],
   });
-  createFormatItems(topLevel, others, "save", "save-image-as", ["image"]);
 
-  // Copy Image As...
+  // Copy Image As... submenu
   chrome.contextMenus.create({
     id: "copy-image-as",
+    parentId: root,
     title: "Copy Image As...",
     contexts: ["image"],
   });
-  createFormatItems(topLevel, others, "copy", "copy-image-as", ["image"]);
+  createFormatItems(visible, "copy", "copy-image-as", ["image"]);
 
-  // Save All Images As...
+  // Save All Images As... submenu
   chrome.contextMenus.create({
     id: "batch-save",
+    parentId: root,
     title: "Save All Images As...",
     contexts: ["image", "page"],
   });
-  createFormatItems(topLevel, others, "batch", "batch-save", ["image", "page"]);
+  createFormatItems(visible, "batch", "batch-save", ["image", "page"]);
+
+  // Separator before customize
+  chrome.contextMenus.create({
+    id: "sep-2",
+    parentId: root,
+    type: "separator",
+    contexts: ["image", "page"],
+  });
 
   // Customize...
   chrome.contextMenus.create({
     id: "customize",
+    parentId: root,
     title: "Customize...",
     contexts: ["image", "page"],
   });
+}
+
+function createFormatItems(allVisible, prefix, parentId, contexts) {
+  for (const fmt of allVisible) {
+    chrome.contextMenus.create({
+      id: `${prefix}-${fmt.id}`,
+      parentId,
+      title: fmt.label,
+      contexts,
+    });
+  }
 }
 
 function createFormatItems(topLevel, others, prefix, parentId, contexts) {
@@ -157,7 +215,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 });
 
 function parseMenuItemId(id) {
-  const parentIds = ["save-image-as", "copy-image-as", "batch-save", "save-others", "copy-others", "batch-others", "customize"];
+  const parentIds = ["save-image-as", "copy-image-as", "batch-save", "save-others", "copy-others", "batch-others", "customize", "sep-1", "sep-2"];
   if (parentIds.includes(id)) return null;
 
   if (id.startsWith("save-")) return { action: "save", format: id.slice(5) };
