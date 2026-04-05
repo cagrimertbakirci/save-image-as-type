@@ -142,6 +142,31 @@
   <h2>Formats</h2>
   <ul class="format-list" id="formatList"></ul>
 
+  <h2>Batch Download</h2>
+  <p style="font-size: 13px; color: #5f6368; margin-bottom: 8px;">
+    Filter images by size when using "Save All Images As..."
+  </p>
+  <div class="setting-row">
+    <label>Minimum size (px)</label>
+    <input type="number" id="batchMinWidth" min="0" max="10000" value="100"
+           style="width: 80px; padding: 4px 8px; border: 1px solid #dadce0; border-radius: 4px;">
+  </div>
+  <div class="setting-row">
+    <label>Maximum size (px) <span style="color:#9aa0a6; font-size:12px">0 = no limit</span></label>
+    <input type="number" id="batchMaxWidth" min="0" max="10000" value="0"
+           style="width: 80px; padding: 4px 8px; border: 1px solid #dadce0; border-radius: 4px;">
+  </div>
+  <div class="setting-row">
+    <label>Prefer highest resolution</label>
+    <label class="toggle">
+      <input type="checkbox" id="batchPreferHighRes" checked>
+      <span class="slider"></span>
+    </label>
+  </div>
+  <p style="font-size: 12px; color: #9aa0a6; margin-top: 4px;">
+    When enabled, uses srcset/picture source to find the largest version of each image.
+  </p>
+
   <h2>Transparency Background</h2>
   <p style="font-size: 13px; color: #5f6368; margin-bottom: 8px;">
     Used when saving as JPG or BMP (formats without transparency).

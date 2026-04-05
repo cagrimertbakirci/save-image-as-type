@@ -297,16 +297,21 @@ async function handleBatchSave(tab, format, formatSettings, settings) {
   try {
     batchCancelFlag = false;
 
-    // Scan page for images via content script
-    console.log("Sending scanImages to tab:", tab.id);
+    // Scan page for images via content script with size filter
+    const minSize = settings.batchFilter?.minWidth ?? 100;
+    const maxSize = settings.batchFilter?.maxWidth ?? 0;
+    const preferHighRes = settings.batchFilter?.preferHighRes !== false;
+
     let results;
     try {
       results = await chrome.tabs.sendMessage(tab.id, {
         target: "content",
         action: "scanImages",
+        minSize,
+        maxSize,
+        preferHighRes,
       });
     } catch (e) {
-      console.log("tabs.sendMessage failed, injecting content script on demand...");
       // Content script not loaded — inject it and retry
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
@@ -315,9 +320,11 @@ async function handleBatchSave(tab, format, formatSettings, settings) {
       results = await chrome.tabs.sendMessage(tab.id, {
         target: "content",
         action: "scanImages",
+        minSize,
+        maxSize,
+        preferHighRes,
       });
     }
-    console.log("Scan results:", results?.length, "images found");
 
     if (!results || results.length === 0) {
       showError("No images found on this page", settings, tab);
@@ -326,29 +333,31 @@ async function handleBatchSave(tab, format, formatSettings, settings) {
 
     const imageUrls = results;
 
-    // Confirmation for large batches — use in-page confirm dialog
-    if (imageUrls.length > 50) {
-      const [confirmResult] = await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: (count, fmt) => confirm(
-          `Save Image as Any Type:\nFound ${count} images. Save all as ${fmt}?`
-        ),
-        args: [imageUrls.length, format.toUpperCase()],
-      });
-      if (!confirmResult.result) return;
-    }
-
-    chrome.notifications.create("batch-progress", {
-      type: "basic",
-      iconUrl: "icons/icon128.png",
-      title: "Saving images...",
-      message: `0/${imageUrls.length} saved as ${format.toUpperCase()}`,
+    // Ask user: zip or separate, with option to cancel
+    const [choiceResult] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: (count, fmt) => {
+        const choice = prompt(
+          `Save Image as Any Type\n\nFound ${count} images.\n\nType "zip" to download as a single ZIP file, or "ok" to download separately.\nCancel to abort.`,
+          "zip"
+        );
+        if (choice === null) return "cancel";
+        return choice.toLowerCase().trim() === "zip" ? "zip" : "separate";
+      },
+      args: [imageUrls.length, format.toUpperCase()],
     });
+
+    const deliveryMode = choiceResult.result;
+    if (deliveryMode === "cancel") return;
 
     await ensureOffscreenDocument();
 
     let saved = 0;
     let failed = 0;
+    const zipFiles = [];
+
+    chrome.action.setBadgeText({ text: "0" });
+    chrome.action.setBadgeBackgroundColor({ color: "#1a73e8" });
 
     for (const imageUrl of imageUrls) {
       if (batchCancelFlag) break;
@@ -368,42 +377,52 @@ async function handleBatchSave(tab, format, formatSettings, settings) {
         }
 
         const filename = deriveFilename(imageUrl, format);
-        await chrome.downloads.download({
-          url: dataUrl,
-          filename,
-          conflictAction: "uniquify",
-        });
+
+        if (deliveryMode === "zip") {
+          zipFiles.push({ filename, dataUrl });
+        } else {
+          await chrome.downloads.download({
+            url: dataUrl,
+            filename,
+            conflictAction: "uniquify",
+          });
+        }
 
         saved++;
       } catch {
         failed++;
       }
 
-      // Update progress badge
       chrome.action.setBadgeText({ text: `${saved}/${imageUrls.length}` });
-      chrome.action.setBadgeBackgroundColor({ color: "#1a73e8" });
+    }
 
-      // Update notification
-      chrome.notifications.update("batch-progress", {
-        message: `${saved}/${imageUrls.length} saved as ${format.toUpperCase()}${failed > 0 ? ` (${failed} failed)` : ""}`,
+    // Deliver ZIP if selected
+    if (deliveryMode === "zip" && zipFiles.length > 0) {
+      chrome.action.setBadgeText({ text: "ZIP" });
+      const zipDataUrl = await chrome.runtime.sendMessage({
+        target: "offscreen",
+        action: "createZip",
+        files: zipFiles,
       });
+
+      if (zipDataUrl && !zipDataUrl.error) {
+        await chrome.downloads.download({
+          url: zipDataUrl,
+          filename: `images_${format}.zip`,
+          saveAs: true,
+        });
+      }
     }
 
     // Final summary
     chrome.action.setBadgeText({ text: "" });
 
-    if (failed > 0) {
+    if (batchCancelFlag) {
       showBadge(`${saved}`, "#fbbc04", 3000, settings);
-      chrome.notifications.update("batch-progress", {
-        title: "Batch save complete",
-        message: `Saved ${saved}/${imageUrls.length} images (${failed} failed)`,
-      });
+    } else if (failed > 0) {
+      showBadge(`${saved}`, "#fbbc04", 3000, settings);
     } else {
       showBadge("✓", "#34a853", 2000, settings);
-      chrome.notifications.update("batch-progress", {
-        title: "Batch save complete",
-        message: `All ${saved} images saved as ${format.toUpperCase()}`,
-      });
     }
   } catch (err) {
     console.error("Batch save failed:", err);

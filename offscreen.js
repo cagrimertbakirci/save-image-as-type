@@ -12,6 +12,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  if (message.action === "createZip") {
+    createZipFromDataUrls(message.files)
+      .then(sendResponse)
+      .catch((err) => sendResponse({ error: err.message }));
+    return true;
+  }
+
   if (message.action === "copyToClipboard") {
     copyDataUrlToClipboard(message.dataUrl)
       .then(() => sendResponse({ success: true }))
@@ -243,4 +250,21 @@ function arrayBufferToDataUrl(buffer, mimeType) {
     binary += String.fromCharCode(bytes[i]);
   }
   return `data:${mimeType};base64,${btoa(binary)}`;
+}
+
+// --- ZIP ---
+
+async function createZipFromDataUrls(files) {
+  const zip = new JSZip();
+  for (const { filename, dataUrl } of files) {
+    const base64 = dataUrl.split(",")[1];
+    zip.file(filename, base64, { base64: true });
+  }
+  const blob = await zip.generateAsync({ type: "blob" });
+  // Convert blob to data URL for download
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.readAsDataURL(blob);
+  });
 }

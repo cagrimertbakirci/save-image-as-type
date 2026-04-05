@@ -12,36 +12,42 @@ document.addEventListener("contextmenu", (e) => {
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.target !== "content" || message.action !== "scanImages") return;
 
-  const urls = scanPageForImages();
+  const urls = scanPageForImages(
+    message.minSize || 100,
+    message.maxSize || 0,
+    message.preferHighRes !== false
+  );
   sendResponse(urls);
   return true;
 });
 
-function scanPageForImages() {
+function scanPageForImages(minSize, maxSize, preferHighRes) {
   const urls = new Set();
 
-  // <img> elements
-  document.querySelectorAll("img[src]").forEach((img) => {
-    if (img.naturalWidth > 10 && img.naturalHeight > 10) {
-      urls.add(img.src);
+  // <img> elements — filter by size, prefer high-res srcset
+  document.querySelectorAll("img").forEach((img) => {
+    const w = img.naturalWidth;
+    const h = img.naturalHeight;
+    if (w < minSize || h < minSize) return;
+    if (maxSize > 0 && (w > maxSize || h > maxSize)) return;
+
+    let bestUrl = img.src;
+
+    // Check srcset for highest resolution version
+    if (preferHighRes && img.srcset) {
+      bestUrl = getHighestResSrcsetUrl(img.srcset) || bestUrl;
     }
+
+    // Check parent <picture> for highest resolution source
+    if (preferHighRes && img.closest("picture")) {
+      const pictureUrl = getHighestResPictureUrl(img.closest("picture"));
+      if (pictureUrl) bestUrl = pictureUrl;
+    }
+
+    if (bestUrl) urls.add(bestUrl);
   });
 
-  // <picture> <source> elements
-  document.querySelectorAll("picture source[srcset]").forEach((source) => {
-    // srcset can have multiple URLs with descriptors
-    const parts = source.srcset.split(",");
-    for (const part of parts) {
-      const url = part.trim().split(/\s+/)[0];
-      if (url) {
-        try {
-          urls.add(new URL(url, document.baseURI).href);
-        } catch { /* invalid URL, skip */ }
-      }
-    }
-  });
-
-  // CSS background-image (visible elements only)
+  // CSS background-image (visible elements only, skip tiny)
   document.querySelectorAll("*").forEach((el) => {
     const bg = getComputedStyle(el).backgroundImage;
     if (bg && bg !== "none") {
@@ -49,7 +55,6 @@ function scanPageForImages() {
       if (match && match[1]) {
         try {
           const url = new URL(match[1], document.baseURI).href;
-          // Skip data URLs and gradients
           if (url.startsWith("http")) urls.add(url);
         } catch { /* invalid URL, skip */ }
       }
@@ -57,4 +62,51 @@ function scanPageForImages() {
   });
 
   return [...urls];
+}
+
+function getHighestResSrcsetUrl(srcset) {
+  let bestUrl = null;
+  let bestSize = 0;
+
+  for (const part of srcset.split(",")) {
+    const tokens = part.trim().split(/\s+/);
+    const url = tokens[0];
+    const descriptor = tokens[1] || "";
+
+    let size = 0;
+    if (descriptor.endsWith("w")) {
+      size = parseInt(descriptor);
+    } else if (descriptor.endsWith("x")) {
+      size = parseFloat(descriptor) * 1000; // normalize: 2x → 2000
+    }
+
+    if (url && size > bestSize) {
+      bestSize = size;
+      try {
+        bestUrl = new URL(url, document.baseURI).href;
+      } catch { /* skip */ }
+    }
+  }
+
+  return bestUrl;
+}
+
+function getHighestResPictureUrl(picture) {
+  let bestUrl = null;
+  let bestSize = 0;
+
+  picture.querySelectorAll("source[srcset]").forEach((source) => {
+    const url = getHighestResSrcsetUrl(source.srcset);
+    // Use media query width hints if available
+    const media = source.getAttribute("media") || "";
+    const widthMatch = media.match(/min-width:\s*(\d+)/);
+    const size = widthMatch ? parseInt(widthMatch[1]) : 0;
+
+    if (url && size >= bestSize) {
+      bestSize = size;
+      bestUrl = url;
+    }
+  });
+
+  return bestUrl;
 }

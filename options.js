@@ -3,6 +3,7 @@ let currentSettings = null;
 document.addEventListener("DOMContentLoaded", async () => {
   currentSettings = await loadSettings();
   renderFormats();
+  renderBatchFilter();
   renderTransparency();
   renderNotifications();
 });
@@ -130,6 +131,35 @@ function onDrop(e) {
 function onDragEnd(e) {
   e.currentTarget.classList.remove("dragging");
   dragIndex = null;
+}
+
+// --- Batch Filter ---
+
+function renderBatchFilter() {
+  const bf = currentSettings.batchFilter || { minWidth: 100, maxWidth: 0, preferHighRes: true };
+
+  const minInput = document.getElementById("batchMinWidth");
+  const maxInput = document.getElementById("batchMaxWidth");
+  const highResToggle = document.getElementById("batchPreferHighRes");
+
+  minInput.value = bf.minWidth;
+  maxInput.value = bf.maxWidth;
+  highResToggle.checked = bf.preferHighRes !== false;
+
+  minInput.addEventListener("change", (e) => {
+    currentSettings.batchFilter.minWidth = parseInt(e.target.value) || 0;
+    save();
+  });
+
+  maxInput.addEventListener("change", (e) => {
+    currentSettings.batchFilter.maxWidth = parseInt(e.target.value) || 0;
+    save();
+  });
+
+  highResToggle.addEventListener("change", (e) => {
+    currentSettings.batchFilter.preferHighRes = e.target.checked;
+    save();
+  });
 }
 
 // --- Transparency ---
