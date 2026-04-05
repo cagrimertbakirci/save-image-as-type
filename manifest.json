@@ -1,18 +1,33 @@
 {
   "manifest_version": 3,
   "name": "Save Image as Any Type",
-  "version": "1.0.2",
-  "description": "Right-click any image to save it as PNG, JPG, or TIFF",
+  "version": "2.0.0",
+  "description": "Right-click any image to save or copy it as PNG, JPG, WebP, AVIF, TIFF, BMP, ICO, or GIF",
   "permissions": [
     "contextMenus",
     "downloads",
-    "offscreen"
+    "offscreen",
+    "storage",
+    "notifications",
+    "clipboardWrite",
+    "scripting"
   ],
   "host_permissions": [
     "<all_urls>"
   ],
   "background": {
     "service_worker": "background.js"
+  },
+  "options_page": "options.html",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "action": {
+    "default_title": "Save Image as Any Type"
   },
   "icons": {
     "16": "icons/icon16.png",
