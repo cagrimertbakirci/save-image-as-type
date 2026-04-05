@@ -146,35 +146,6 @@ function createFormatItems(allVisible, prefix, parentId, contexts) {
   }
 }
 
-function createFormatItems(topLevel, others, prefix, parentId, contexts) {
-  for (const fmt of topLevel) {
-    chrome.contextMenus.create({
-      id: `${prefix}-${fmt.id}`,
-      parentId,
-      title: fmt.label,
-      contexts,
-    });
-  }
-
-  if (others.length > 0) {
-    const othersId = `${prefix}-others`;
-    chrome.contextMenus.create({
-      id: othersId,
-      parentId,
-      title: "Others",
-      contexts,
-    });
-    for (const fmt of others) {
-      chrome.contextMenus.create({
-        id: `${prefix}-${fmt.id}`,
-        parentId: othersId,
-        title: fmt.label,
-        contexts,
-      });
-    }
-  }
-}
-
 // --- Context Menu Click Handler ---
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
