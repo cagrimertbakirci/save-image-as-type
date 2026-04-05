@@ -149,6 +149,17 @@ function createFormatItems(allVisible, prefix, parentId, contexts) {
 // --- Context Menu Click Handler ---
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  console.log("Menu clicked:", info.menuItemId, "tab:", tab?.id);
+
+  // Debug: inject alert to confirm handler is reached
+  if (tab?.id) {
+    chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: (id) => console.log("[SaveImageAsAnyType] click:", id),
+      args: [info.menuItemId],
+    });
+  }
+
   if (info.menuItemId === "customize") {
     chrome.runtime.openOptionsPage();
     return;
@@ -173,7 +184,10 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
   const formatSettings = getFormatSettings(settings, format);
 
+  console.log("Parsed:", action, format, "tab:", tab?.id);
+
   if (action === "batch") {
+    console.log("Starting batch save...");
     await handleBatchSave(tab, format, formatSettings, settings);
   } else if (action === "copy") {
     await handleCopyImage(info.srcUrl, format, formatSettings, settings, tab);
@@ -284,10 +298,26 @@ async function handleBatchSave(tab, format, formatSettings, settings) {
     batchCancelFlag = false;
 
     // Scan page for images via content script
-    const results = await chrome.tabs.sendMessage(tab.id, {
-      target: "content",
-      action: "scanImages",
-    });
+    console.log("Sending scanImages to tab:", tab.id);
+    let results;
+    try {
+      results = await chrome.tabs.sendMessage(tab.id, {
+        target: "content",
+        action: "scanImages",
+      });
+    } catch (e) {
+      console.log("tabs.sendMessage failed, injecting content script on demand...");
+      // Content script not loaded — inject it and retry
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ["content.js"],
+      });
+      results = await chrome.tabs.sendMessage(tab.id, {
+        target: "content",
+        action: "scanImages",
+      });
+    }
+    console.log("Scan results:", results?.length, "images found");
 
     if (!results || results.length === 0) {
       showError("No images found on this page", settings, tab);
@@ -296,36 +326,16 @@ async function handleBatchSave(tab, format, formatSettings, settings) {
 
     const imageUrls = results;
 
-    // Confirmation for large batches
+    // Confirmation for large batches — use in-page confirm dialog
     if (imageUrls.length > 50) {
-      chrome.notifications.create("batch-confirm", {
-        type: "basic",
-        iconUrl: "icons/icon128.png",
-        title: "Save All Images",
-        message: `Found ${imageUrls.length} images. This may take a while. Saving as ${format.toUpperCase()}...`,
-        buttons: [{ title: "Continue" }, { title: "Cancel" }],
+      const [confirmResult] = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: (count, fmt) => confirm(
+          `Save Image as Any Type:\nFound ${count} images. Save all as ${fmt}?`
+        ),
+        args: [imageUrls.length, format.toUpperCase()],
       });
-
-      const confirmed = await new Promise((resolve) => {
-        const btnHandler = (notifId, btnIdx) => {
-          if (notifId === "batch-confirm") {
-            chrome.notifications.onButtonClicked.removeListener(btnHandler);
-            chrome.notifications.onClosed.removeListener(closeHandler);
-            resolve(btnIdx === 0);
-          }
-        };
-        const closeHandler = (notifId) => {
-          if (notifId === "batch-confirm") {
-            chrome.notifications.onButtonClicked.removeListener(btnHandler);
-            chrome.notifications.onClosed.removeListener(closeHandler);
-            resolve(false);
-          }
-        };
-        chrome.notifications.onButtonClicked.addListener(btnHandler);
-        chrome.notifications.onClosed.addListener(closeHandler);
-      });
-
-      if (!confirmed) return;
+      if (!confirmResult.result) return;
     }
 
     chrome.notifications.create("batch-progress", {
