@@ -176,9 +176,9 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (action === "batch") {
     await handleBatchSave(tab, format, formatSettings, settings);
   } else if (action === "copy") {
-    await handleCopyImage(info.srcUrl, format, formatSettings, settings);
+    await handleCopyImage(info.srcUrl, format, formatSettings, settings, tab);
   } else {
-    await handleSaveImage(info.srcUrl, format, formatSettings, settings);
+    await handleSaveImage(info.srcUrl, format, formatSettings, settings, tab);
   }
 
   // Reset modifier state
@@ -207,7 +207,7 @@ function getFormatSettings(settings, formatId) {
 
 // --- Save Image ---
 
-async function handleSaveImage(imageUrl, format, formatSettings, settings) {
+async function handleSaveImage(imageUrl, format, formatSettings, settings, tab) {
   try {
     await ensureOffscreenDocument();
 
@@ -229,13 +229,13 @@ async function handleSaveImage(imageUrl, format, formatSettings, settings) {
     showBadge("✓", "#34a853", 2000, settings);
   } catch (err) {
     console.error("Save failed:", err);
-    showError(`Failed to save image: ${err.message}`, settings);
+    showError(`Failed to save image: ${err.message}`, settings, tab);
   }
 }
 
 // --- Copy Image ---
 
-async function handleCopyImage(imageUrl, format, formatSettings, settings) {
+async function handleCopyImage(imageUrl, format, formatSettings, settings, tab) {
   try {
     await ensureOffscreenDocument();
 
@@ -273,7 +273,7 @@ async function handleCopyImage(imageUrl, format, formatSettings, settings) {
     }
   } catch (err) {
     console.error("Copy failed:", err);
-    showError(`Failed to copy image: ${err.message}`, settings);
+    showError(`Failed to copy image: ${err.message}`, settings, tab);
   }
 }
 
@@ -290,7 +290,7 @@ async function handleBatchSave(tab, format, formatSettings, settings) {
     });
 
     if (!results || results.length === 0) {
-      showError("No images found on this page", settings);
+      showError("No images found on this page", settings, tab);
       return;
     }
 
@@ -397,7 +397,7 @@ async function handleBatchSave(tab, format, formatSettings, settings) {
     }
   } catch (err) {
     console.error("Batch save failed:", err);
-    showError(`Batch save failed: ${err.message}`, settings);
+    showError(`Batch save failed: ${err.message}`, settings, tab);
   }
 }
 
@@ -411,7 +411,7 @@ function showBadge(text, color, durationMs, settings) {
   setTimeout(() => chrome.action.setBadgeText({ text: "" }), durationMs);
 }
 
-function showError(message, settings) {
+function showError(message, settings, tab) {
   chrome.action.setBadgeText({ text: "✗" });
   chrome.action.setBadgeBackgroundColor({ color: "#ea4335" });
   setTimeout(() => chrome.action.setBadgeText({ text: "" }), 3000);
@@ -422,6 +422,15 @@ function showError(message, settings) {
       iconUrl: "icons/icon128.png",
       title: "Save Image as Any Type",
       message,
+    });
+  }
+
+  // Show in-page alert as fallback (notifications may be blocked by OS)
+  if (tab?.id) {
+    chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: (msg) => alert(msg),
+      args: [`Save Image as Any Type:\n${message}`],
     });
   }
 }
