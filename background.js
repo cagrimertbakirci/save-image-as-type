@@ -149,17 +149,6 @@ function createFormatItems(allVisible, prefix, parentId, contexts) {
 // --- Context Menu Click Handler ---
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  console.log("Menu clicked:", info.menuItemId, "tab:", tab?.id);
-
-  // Debug: inject alert to confirm handler is reached
-  if (tab?.id) {
-    chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: (id) => console.log("[SaveImageAsAnyType] click:", id),
-      args: [info.menuItemId],
-    });
-  }
-
   if (info.menuItemId === "customize") {
     chrome.runtime.openOptionsPage();
     return;
@@ -184,10 +173,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
   const formatSettings = getFormatSettings(settings, format);
 
-  console.log("Parsed:", action, format, "tab:", tab?.id);
-
   if (action === "batch") {
-    console.log("Starting batch save...");
     await handleBatchSave(tab, format, formatSettings, settings);
   } else if (action === "copy") {
     await handleCopyImage(info.srcUrl, format, formatSettings, settings, tab);
