@@ -4,6 +4,13 @@ importScripts("lib/defaults.js");
 let lastModifierState = { shiftKey: false };
 let batchCancelFlag = false;
 
+// Cancel batch when progress notification is closed
+chrome.notifications.onClosed.addListener((notifId) => {
+  if (notifId === "batch-progress") {
+    batchCancelFlag = true;
+  }
+});
+
 // --- Initialization ---
 
 chrome.runtime.onInstalled.addListener(async () => {
@@ -291,13 +298,6 @@ async function handleBatchSave(tab, format, formatSettings, settings) {
 
       if (!confirmed) return;
     }
-
-    // Cancel batch when progress notification is closed
-    chrome.notifications.onClosed.addListener((notifId) => {
-      if (notifId === "batch-progress") {
-        batchCancelFlag = true;
-      }
-    });
 
     chrome.notifications.create("batch-progress", {
       type: "basic",
