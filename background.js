@@ -223,10 +223,11 @@ async function handleSaveImage(imageUrl, format, formatSettings, settings, tab) 
       throw new Error(dataUrl?.error || "Conversion failed");
     }
 
-    downloadAs(dataUrl, deriveFilename(imageUrl, format), { saveAs: true });
+    await downloadAs(dataUrl, deriveFilename(imageUrl, format), { saveAs: true });
 
     showBadge("✓", "#34a853", 2000, settings);
   } catch (err) {
+    if (/cancel/i.test(err?.message || "")) return; // user dismissed the Save As dialog
     console.error("Save failed:", err);
     showError(`Failed to save image: ${err.message}`, settings, tab);
   }
@@ -443,26 +444,58 @@ function showError(message, settings, tab) {
 
 // --- Downloads ---
 
-// Chrome ignores downloads.download()'s `filename` for data: URLs and falls back
-// to "download.<ext>", so re-assert the name when Chrome asks for one.
-const pendingNames = new Map(); // download url -> filename
+// As soon as ANY extension registers an onDeterminingFilename listener, Chrome
+// discards downloads.download()'s `filename` for every extension download in the
+// browser (crbug.com/40706258) — that is what turned saves into "download.<ext>"
+// for users who had such an extension installed. Reasserting the name means
+// becoming a determiner too, so we only hold the listener while our own
+// downloads are in flight; otherwise we would inflict the same bug on everyone.
+const pendingNames = new Map(); // download url -> [filename, ...]
 
-chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
-  if (item.byExtensionId !== chrome.runtime.id || pendingNames.size === 0) {
+function suggestOurName(item, suggest) {
+  const queue = item.byExtensionId === chrome.runtime.id && pendingNames.get(item.url);
+  if (!queue || !queue.length) {
     suggest();
     return;
   }
-  // Fall back to the oldest pending name: our downloads are issued one at a time.
-  const key = pendingNames.has(item.url) ? item.url : pendingNames.keys().next().value;
-  const filename = pendingNames.get(key);
-  pendingNames.delete(key);
-  suggest({ filename, conflictAction: "uniquify" });
-});
+  const filename = queue.shift();
+  if (!queue.length) pendingNames.delete(item.url);
+  suggest({ filename, conflictAction: "uniquify" }); // must precede removeListener
+  releaseDeterminer();
+}
 
-function downloadAs(url, filename, options = {}) {
-  pendingNames.set(url, filename);
-  setTimeout(() => pendingNames.delete(url), 60000);
-  return chrome.downloads.download({ url, filename, ...options });
+function releaseDeterminer() {
+  if (pendingNames.size === 0) {
+    chrome.downloads.onDeterminingFilename.removeListener(suggestOurName);
+  }
+}
+
+function forget(url, filename) {
+  const queue = pendingNames.get(url);
+  const i = queue ? queue.indexOf(filename) : -1;
+  if (i >= 0) {
+    queue.splice(i, 1);
+    if (!queue.length) pendingNames.delete(url);
+  }
+  releaseDeterminer();
+}
+
+async function downloadAs(url, filename, options = {}) {
+  const queue = pendingNames.get(url);
+  if (queue) queue.push(filename);
+  else pendingNames.set(url, [filename]);
+
+  if (!chrome.downloads.onDeterminingFilename.hasListener(suggestOurName)) {
+    chrome.downloads.onDeterminingFilename.addListener(suggestOurName);
+  }
+  setTimeout(() => forget(url, filename), 60000);
+
+  try {
+    return await chrome.downloads.download({ url, filename, ...options });
+  } catch (err) {
+    forget(url, filename);
+    throw err;
+  }
 }
 
 // --- Filename Derivation ---
@@ -486,7 +519,14 @@ function deriveFilename(url, format) {
     }
 
     // Strip only what is illegal in a filename; keep letters of any language.
-    name = name.replace(/[\\/:*?"<>|\x00-\x1f]/g, "_").replace(/^[.\s]+/, "").trim().slice(0, 100) || "image";
+    name = name
+      .replace(/[\\/:*?"<>|\x00-\x1f\x7f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, "_")
+      .replace(/^[.\s]+/, "")
+      .slice(0, 100)
+      .trim() || "image";
+
+    // Chrome rejects Windows device names outright, on every platform.
+    if (/^(con|prn|aux|nul|com\d|lpt\d)$/i.test(name)) name = `_${name}`;
 
     return `${name}.${format}`;
   } catch {
