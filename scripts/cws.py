@@ -82,7 +82,7 @@ def access_token(cfg):
 def cmd_auth(cfg):
     cid, secret = need(cfg, "CWS_CLIENT_ID", "CWS_CLIENT_SECRET")
     sock = socket.socket(); sock.bind(("127.0.0.1", 0)); port = sock.getsockname()[1]; sock.close()
-    redirect = f"http://127.0.0.1:{port}"
+    redirect = f"http://localhost:{port}"
     got = {}
 
     class H(http.server.BaseHTTPRequestHandler):
@@ -90,23 +90,28 @@ def cmd_auth(cfg):
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             got.update({k: v[0] for k, v in q.items()})
             self.send_response(200); self.send_header("Content-Type", "text/html"); self.end_headers()
-            ok = "code" in got
-            self.wfile.write(b"<h2>Done - close this tab.</h2>" if ok else b"<h2>Failed.</h2>")
+            self.wfile.write(b"<h2>Done - close this tab.</h2>" if "code" in got else b"<h2>Failed.</h2>")
+            done.set()
         def log_message(self, *a): pass
 
+    done = threading.Event()
     srv = http.server.HTTPServer(("127.0.0.1", port), H)
-    threading.Thread(target=srv.handle_request, daemon=True).start()
+
+    def serve():
+        while not done.is_set():
+            srv.handle_request()
+    threading.Thread(target=serve, daemon=True).start()
 
     url = "https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode({
         "client_id": cid, "redirect_uri": redirect, "response_type": "code",
         "scope": SCOPE, "access_type": "offline", "prompt": "consent",
     })
     print("Sign in as the Web Store publisher account, then approve:\n\n" + url + "\n")
-    try: webbrowser.open(url)
-    except Exception: pass
-    srv.socket.settimeout(300)
-    while "code" not in got and "error" not in got:
-        pass
+    if "--no-open" not in sys.argv:
+        try: webbrowser.open(url)
+        except Exception: pass
+    if not done.wait(3600):
+        sys.exit("timed out waiting for consent")
     if "error" in got:
         sys.exit(f"consent failed: {got['error']}")
 
