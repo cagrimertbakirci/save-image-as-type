@@ -223,8 +223,7 @@ async function handleSaveImage(imageUrl, format, formatSettings, settings, tab) 
       throw new Error(dataUrl?.error || "Conversion failed");
     }
 
-    const filename = deriveFilename(imageUrl, format);
-    chrome.downloads.download({ url: dataUrl, filename, saveAs: true });
+    downloadAs(dataUrl, deriveFilename(imageUrl, format), { saveAs: true });
 
     showBadge("✓", "#34a853", 2000, settings);
   } catch (err) {
@@ -367,11 +366,7 @@ async function handleBatchSave(tab, format, formatSettings, settings) {
         if (deliveryMode === "zip") {
           zipFiles.push({ filename, dataUrl });
         } else {
-          await chrome.downloads.download({
-            url: dataUrl,
-            filename,
-            conflictAction: "uniquify",
-          });
+          await downloadAs(dataUrl, filename);
         }
 
         saved++;
@@ -392,11 +387,7 @@ async function handleBatchSave(tab, format, formatSettings, settings) {
       });
 
       if (zipDataUrl && !zipDataUrl.error) {
-        await chrome.downloads.download({
-          url: zipDataUrl,
-          filename: `images_${format}.zip`,
-          saveAs: true,
-        });
+        await downloadAs(zipDataUrl, `images_${format}.zip`, { saveAs: true });
       }
     }
 
@@ -450,20 +441,52 @@ function showError(message, settings, tab) {
   }
 }
 
+// --- Downloads ---
+
+// Chrome ignores downloads.download()'s `filename` for data: URLs and falls back
+// to "download.<ext>", so re-assert the name when Chrome asks for one.
+const pendingNames = new Map(); // download url -> filename
+
+chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
+  if (item.byExtensionId !== chrome.runtime.id || pendingNames.size === 0) {
+    suggest();
+    return;
+  }
+  // Fall back to the oldest pending name: our downloads are issued one at a time.
+  const key = pendingNames.has(item.url) ? item.url : pendingNames.keys().next().value;
+  const filename = pendingNames.get(key);
+  pendingNames.delete(key);
+  suggest({ filename, conflictAction: "uniquify" });
+});
+
+function downloadAs(url, filename, options = {}) {
+  pendingNames.set(url, filename);
+  setTimeout(() => pendingNames.delete(url), 60000);
+  return chrome.downloads.download({ url, filename, ...options });
+}
+
 // --- Filename Derivation ---
 
 function deriveFilename(url, format) {
   try {
+    if (url.startsWith("data:")) return `image.${format}`;
+
     const urlObj = new URL(url);
     let name = urlObj.pathname.split("/").pop() || "image";
-    name = decodeURIComponent(name.split("?")[0].split("#")[0]);
+    name = name.split("?")[0].split("#")[0];
+
+    // Malformed escapes are not fatal — keep the raw name instead.
+    try {
+      name = decodeURIComponent(name);
+    } catch { /* keep as-is */ }
 
     const dotIndex = name.lastIndexOf(".");
     if (dotIndex > 0) {
       name = name.substring(0, dotIndex);
     }
 
-    name = name.replace(/[^a-zA-Z0-9_\-\.]/g, "_") || "image";
+    // Strip only what is illegal in a filename; keep letters of any language.
+    name = name.replace(/[\\/:*?"<>|\x00-\x1f]/g, "_").replace(/^[.\s]+/, "").trim().slice(0, 100) || "image";
 
     return `${name}.${format}`;
   } catch {

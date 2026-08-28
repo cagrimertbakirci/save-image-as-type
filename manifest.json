@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Save Image as Any Type",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Right-click any image to convert and save it in 8 different formats",
   "permissions": [
     "contextMenus",
